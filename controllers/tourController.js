@@ -23,32 +23,72 @@ const Tour = require('./../models/tourModel');
 //   next();
 // };
 
+exports.aliasTopTours = (req, res, next) => {
+  req.aliasQuery = {
+    limit: '5',
+    sort: '-ratingsAverage,price',
+    fields: 'name,price,ratingsAverage,summary,difficulty',
+  };
+  next();
+};
+
 exports.getAllTours = async (req, res) => {
   try {
+    // FROM MORGAN - GET /api/v1/tours?duration=5&difficulty=easy 200 31.912 ms - 2027
+
+    //127.0.0.1:3000/api/v1/tours?duration[gte]=5&difficulty=easy&limit=2&sort=1
     //Build query
-    // 1) Filtering
-    const queryObj = { ...req.query };
+    // 1A) Filtering
+    console.log(req.query); //{ duration: '5', difficulty: 'easy' } object type
+    const queryParams = req.aliasQuery || req.query;
+    const queryObj = { ...queryParams }; //makes a shallow copy of the req.query
+    console.log(queryObj); //{ duration: '5', difficulty: 'easy' } object type
     const excludedFields = ['page', 'sort', 'limit', 'fields'];
     excludedFields.forEach((el) => delete queryObj[el]);
 
-    // console.log(req.query, queryObj);
-    // { difficulty: 'easy', duration: { gte: '5' } } { difficulty: 'easy', duration: { gte: '5' } }
+    console.log('req.query after primary filtering', req.query);
+    console.log('queryObj after primary filtering', queryObj);
 
-    let queryStr = JSON.stringify(queryObj);
-    queryStr = queryStr.replace(/\b(gte|lte|gt|lt)\b/g, (match) => `$${match}`);
-    // console.log(JSON.parse(queryStr));
+    // req.query after primary filtering { duration: { gte: '5' }, difficulty: 'easy', limit: '2', sort: '1' }
+    // queryObj after primary filtering { duration: { gte: '5' }, difficulty: 'easy' }
 
-    //{ difficulty: 'easy', 'duration{$gte': '5' }}
-    //{ difficulty: 'easy', 'duration[gte]': '5' } - without query parser app.set('query parser', 'extended'), in app.js
-    //{ difficulty: 'easy', duration: { gte: '5' } } - query parser
+    // 1B) Advanced Filtering
+    let queryStr = JSON.stringify(queryObj); //converts query of obj type to string
+    queryStr = queryStr.replace(/\b(gte|lte|gt|lt)\b/g, (match) => `$${match}`); //adds a dollar sign
+    console.log(JSON.parse(queryStr)); // { duration: { '$gte': '5' }, difficulty: 'easy' }
+    let query = Tour.find(JSON.parse(queryStr)); // converts string back to object
 
-    const query = Tour.find(JSON.parse(queryStr));
+    // 2) Sorting
+    if (queryParams.sort) {
+      const sortBy = queryParams.sort.split(',').join(' ');
+      // console.log(sortBy);
+      query = query.sort(sortBy); //query = query.sort('price'); - equivalent
+    } else {
+      query = query.sort('-createdAt'); //descending order - newest ones appear first
+    }
 
-    // const tours = await Tour.find()
-    //   .where('duration')
-    //   .equals(5)
-    //   .where('difficulty')
-    //   .equals('easy');
+    // 3) Field limiting
+    if (queryParams.fields) {
+      const fields = queryParams.fields.split(',').join(' ');
+      query = query.select(fields);
+    } else {
+      query = query.select('-__v'); //negative sign - exclude this field
+    }
+
+    // 4) Pagination
+    // page=2 and limit=10 1 to 10 are on page 1 and 11 to 20 are on page 2
+    const page = queryParams.page * 1 || 1;
+    const limit = queryParams.limit * 1 || 100;
+    const skip = (page - 1) * limit;
+
+    console.log('LIMIT:', queryParams.limit);
+
+    query = query.skip(skip).limit(limit);
+
+    if (queryParams.page) {
+      const numTours = await Tour.countDocuments();
+      if (skip >= numTours) throw new Error('This page does not exist');
+    }
 
     const tours = await query;
 

@@ -13,6 +13,10 @@ if (process.env.NODE_ENV === 'development') {
 app.use(express.json());
 app.use(express.static(`${__dirname}/public`));
 app.set('query parser', 'extended');
+// app.set('query parser');
+// { difficulty: 'easy', duration: { gte: '5' } } - extended
+//{ difficulty: 'easy', 'duration[gte]': '5' } - without extended
+// helps with mongo queries
 
 //user defined middlware
 // app.use((req, res, next) => {
