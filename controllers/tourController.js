@@ -1,27 +1,5 @@
 const Tour = require('./../models/tourModel');
-
-// exports.checkID = (req, res, next, val) => {
-//   console.log(`Tour id is: ${val}`);
-//   if (req.params.id > tours.length) {
-//     return res.status(404).json({
-//       status: 'fail',
-//       message: 'invalid ID',
-//     });
-//   }
-//   next();
-// };
-
-// exports.checkBody = (req, res, next) => {
-//   console.log(req.body);
-//   if (!req.body.name || !req.body.price) {
-//     res.status(400).json({
-//       status: 'fail',
-//       message:
-//         'Price and name not contained in the request body',
-//     });
-//   }
-//   next();
-// };
+const APIFeatures = require('./../utils/apiFeatures');
 
 exports.aliasTopTours = (req, res, next) => {
   req.aliasQuery = {
@@ -34,63 +12,13 @@ exports.aliasTopTours = (req, res, next) => {
 
 exports.getAllTours = async (req, res) => {
   try {
-    // FROM MORGAN - GET /api/v1/tours?duration=5&difficulty=easy 200 31.912 ms - 2027
-
-    //127.0.0.1:3000/api/v1/tours?duration[gte]=5&difficulty=easy&limit=2&sort=1
-    //Build query
-    // 1A) Filtering
-    console.log(req.query); //{ duration: '5', difficulty: 'easy' } object type
     const queryParams = req.aliasQuery || req.query;
-    const queryObj = { ...queryParams }; //makes a shallow copy of the req.query
-    console.log(queryObj); //{ duration: '5', difficulty: 'easy' } object type
-    const excludedFields = ['page', 'sort', 'limit', 'fields'];
-    excludedFields.forEach((el) => delete queryObj[el]);
-
-    console.log('req.query after primary filtering', req.query);
-    console.log('queryObj after primary filtering', queryObj);
-
-    // req.query after primary filtering { duration: { gte: '5' }, difficulty: 'easy', limit: '2', sort: '1' }
-    // queryObj after primary filtering { duration: { gte: '5' }, difficulty: 'easy' }
-
-    // 1B) Advanced Filtering
-    let queryStr = JSON.stringify(queryObj); //converts query of obj type to string
-    queryStr = queryStr.replace(/\b(gte|lte|gt|lt)\b/g, (match) => `$${match}`); //adds a dollar sign
-    console.log(JSON.parse(queryStr)); // { duration: { '$gte': '5' }, difficulty: 'easy' }
-    let query = Tour.find(JSON.parse(queryStr)); // converts string back to object
-
-    // 2) Sorting
-    if (queryParams.sort) {
-      const sortBy = queryParams.sort.split(',').join(' ');
-      // console.log(sortBy);
-      query = query.sort(sortBy); //query = query.sort('price'); - equivalent
-    } else {
-      query = query.sort('-createdAt'); //descending order - newest ones appear first
-    }
-
-    // 3) Field limiting
-    if (queryParams.fields) {
-      const fields = queryParams.fields.split(',').join(' ');
-      query = query.select(fields);
-    } else {
-      query = query.select('-__v'); //negative sign - exclude this field
-    }
-
-    // 4) Pagination
-    // page=2 and limit=10 1 to 10 are on page 1 and 11 to 20 are on page 2
-    const page = queryParams.page * 1 || 1;
-    const limit = queryParams.limit * 1 || 100;
-    const skip = (page - 1) * limit;
-
-    console.log('LIMIT:', queryParams.limit);
-
-    query = query.skip(skip).limit(limit);
-
-    if (queryParams.page) {
-      const numTours = await Tour.countDocuments();
-      if (skip >= numTours) throw new Error('This page does not exist');
-    }
-
-    const tours = await query;
+    const features = new APIFeatures(Tour.find(), queryParams)
+      .filter()
+      .sort()
+      .limitFields()
+      .paginate();
+    const tours = await features.query;
 
     res.status(200).json({
       status: 'success',
@@ -109,7 +37,7 @@ exports.getAllTours = async (req, res) => {
 
 exports.getTour = async (req, res) => {
   try {
-    const tour = await Tour.findById(req.params.id); //Tour.findOne({_id: req.params.id})
+    const tour = await Tour.findById(req.params.id);
     res.status(200).json({
       status: 'success',
       data: {
@@ -178,3 +106,94 @@ exports.deleteTour = async (req, res) => {
     });
   }
 };
+
+exports.getTourStats = async (req, res) => {
+  try {
+    const stats = await Tour.aggregate([
+      {
+        $match: { ratingsAverage: { $gte: 4.5 } },
+      },
+      {
+        $group: {
+          _id: { $toUpper: '$difficulty' },
+          numTours: { $sum: 1 },
+          numRatings: { $sum: '$ratingsQuantity' },
+          avgRating: { $avg: '$ratingsAverage' },
+          avgPrice: { $avg: '$price' },
+          minPrice: { $avg: '$price' },
+          maxPrice: { $avg: '$price' },
+        },
+      },
+      {
+        $sort: { avgPrice: 1 },
+      },
+      // {
+      //   $match: { _id: { $ne: 'EASY' } },
+      // },
+    ]);
+    res.status(204).json({
+      status: 'success',
+      data: stats,
+    });
+  } catch (err) {
+    res.status.json({
+      status: 'fail',
+      message: 'Invalid data sent!',
+    });
+  }
+};
+
+// FROM MORGAN - GET /api/v1/tours?duration=5&difficulty=easy 200 31.912 ms - 2027
+
+//127.0.0.1:3000/api/v1/tours?duration[gte]=5&difficulty=easy&limit=2&sort=1
+//Build query
+// 1A) Filtering
+//console.log(req.query); //{ duration: '5', difficulty: 'easy' } object type
+// const queryObj = { ...queryParams }; //makes a shallow copy of the req.query
+// console.log(queryObj); //{ duration: '5', difficulty: 'easy' } object type
+// const excludedFields = ['page', 'sort', 'limit', 'fields'];
+// excludedFields.forEach((el) => delete queryObj[el]);
+
+// console.log('req.query after primary filtering', req.query);
+// console.log('queryObj after primary filtering', queryObj);
+
+// // req.query after primary filtering { duration: { gte: '5' }, difficulty: 'easy', limit: '2', sort: '1' }
+// // queryObj after primary filtering { duration: { gte: '5' }, difficulty: 'easy' }
+
+// // 1B) Advanced Filtering
+// let queryStr = JSON.stringify(queryObj); //converts query of obj type to string
+// queryStr = queryStr.replace(/\b(gte|lte|gt|lt)\b/g, (match) => `$${match}`); //adds a dollar sign
+// console.log(JSON.parse(queryStr)); // { duration: { '$gte': '5' }, difficulty: 'easy' }
+// let query = Tour.find(JSON.parse(queryStr)); // converts string back to object
+
+// 2) Sorting
+// if (queryParams.sort) {
+//   const sortBy = queryParams.sort.split(',').join(' ');
+//   // console.log(sortBy);
+//   query = query.sort(sortBy); //query = query.sort('price'); - equivalent
+// } else {
+//   query = query.sort('-createdAt'); //descending order - newest ones appear first
+// }
+
+// 3) Field limiting
+// if (queryParams.fields) {
+//   const fields = queryParams.fields.split(',').join(' ');
+//   query = query.select(fields);
+// } else {
+//   query = query.select('-__v'); //negative sign - exclude this field
+// }
+
+// 4) Pagination
+// page=2 and limit=10 1 to 10 are on page 1 and 11 to 20 are on page 2
+// const page = queryParams.page * 1 || 1;
+// const limit = queryParams.limit * 1 || 100;
+// const skip = (page - 1) * limit;
+
+// console.log('LIMIT:', queryParams.limit);
+
+// query = query.skip(skip).limit(limit);
+
+// if (queryParams.page) {
+//   const numTours = await Tour.countDocuments();
+//   if (skip >= numTours) throw new Error('This page does not exist');
+// }
