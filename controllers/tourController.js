@@ -57,7 +57,6 @@ exports.createTour = async (req, res) => {
     // const newTour = new Tour({});
     // newTour.save();
     const newTour = await Tour.create(req.body);
-    console.log('TYPE OF res.status:', typeof res.status);
 
     res.status(201).json({
       status: 'success',
@@ -83,7 +82,7 @@ exports.updateTour = async (req, res) => {
     res.status(200).json({
       status: 'success',
       data: {
-        tour: '<Updated tour here...>',
+        tour,
       },
     });
   } catch (err) {
