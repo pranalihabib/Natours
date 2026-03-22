@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const validator = require('validator');
 const bcrypt = require('bcryptjs');
 
@@ -9,8 +10,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please enter your name'],
     trim: true,
-    // minLength: [4, 'A name must have at least 4 characters'],
-    // maxLength: [15, 'A name must have at most 15 characters'],
   },
   email: {
     type: String,
@@ -22,15 +21,20 @@ const userSchema = new mongoose.Schema({
   photo: {
     type: String,
   },
+  role: {
+    type: String,
+    enum: ['user', 'guide', 'lead-guide', 'admin'],
+    enum: {
+      values: ['user', 'guide', 'lead-guide', 'admin'],
+      message: 'Roles can only be user, guide, lead guide or admin.',
+    },
+    default: 'user',
+  },
   password: {
     type: String,
     required: [true, 'Password is required.'],
     minLength: [8, 'A password must be at least 8 characters long'],
     select: false, // hides password from queries so find() wont return passwords
-    // match: [
-    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/,
-    //   'Password must contain uppercase, lowercase and number',
-    // ],
   },
   passwordConfirm: {
     type: String,
@@ -44,6 +48,12 @@ const userSchema = new mongoose.Schema({
     },
   },
   passwordChangedAt: {
+    type: Date,
+  },
+  passwordResetToken: {
+    type: String,
+  },
+  passwordResetExpires: {
     type: Date,
   },
 });
@@ -71,10 +81,21 @@ userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
       this.passwordChangedAt.getTime() / 1000,
       10,
     );
-    console.log(changedTimestamp, JWTTimestamp);
+    // console.log(changedTimestamp, JWTTimestamp);
     return JWTTimestamp < changedTimestamp;
   }
   return false;
+};
+
+userSchema.methods.createPasswordResetToken = function () {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+  return resetToken;
 };
 
 const User = mongoose.model('User', userSchema);
