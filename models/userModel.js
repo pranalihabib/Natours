@@ -56,6 +56,11 @@ const userSchema = new mongoose.Schema({
   passwordResetExpires: {
     type: Date,
   },
+  active: {
+    type: String,
+    default: true,
+    select: false,
+  },
 });
 
 userSchema.pre('save', async function () {
@@ -66,6 +71,10 @@ userSchema.pre('save', async function () {
   if (!this.isNew) {
     this.passwordChangedAt = Date.now() - 1000;
   }
+});
+
+userSchema.pre(/^find/, async function () {
+  this.find({ active: { $ne: false } });
 });
 
 userSchema.methods.correctPassword = async function (
@@ -96,6 +105,14 @@ userSchema.methods.createPasswordResetToken = function () {
 
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
   return resetToken;
+};
+
+userSchema.methods.toJSON = function () {
+  const sentUserData = this.toObject();
+  console.log(sentUserData);
+  delete sentUserData.password;
+  console.log(sentUserData);
+  return sentUserData;
 };
 
 const User = mongoose.model('User', userSchema);
